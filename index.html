@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Petty Cash Manager</title>
+<meta name="description" content="Offline-first petty cash management — ledger, reconciliation, and Excel import/export, all stored locally on your device." />
+<meta name="theme-color" content="#1a73e8" />
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" href="./icons/icon-192.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="./icons/icon-192.svg" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lexend:wght@600;700&display=swap" rel="stylesheet" />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+          display: ['Lexend', 'Inter', 'sans-serif']
+        },
+        borderRadius: { '3xl': '1.5rem', '4xl': '1.75rem' }
+      }
+    }
+  };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.6/dexie.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+
+<style>
+  html, body { height: 100%; }
+  body { -webkit-tap-highlight-color: transparent; font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  h1, h2, h3, .font-display { font-family: 'Lexend', 'Inter', sans-serif; letter-spacing: -0.01em; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.3); border-radius: 999px; }
+
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes viewIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes popIn { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+  @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .view-fade { animation: viewIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .modal-pop { animation: popIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  @media (max-width: 767px) { .modal-pop { animation: sheetUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; } }
+
+  #toast-host { position: fixed; bottom: 88px; left: 50%; transform: translateX(-50%); z-index: 60; width: max-content; max-width: 92vw; }
+  @media (min-width: 768px) { #toast-host { bottom: 24px; left: auto; right: 24px; transform: none; } }
+
+  /* Accent theme — overwritten at runtime by applyAccentColor() in app.js.
+     Default: Google Blue. */
+  :root {
+    --accent-50: #e8f0fe;
+    --accent-300: #8ab4f8;
+    --accent-400: #669df6;
+    --accent-600: #1a73e8;
+    --accent-700: #1967d2;
+    --accent-soft-dark: rgba(66,133,244,0.12);
+    --shadow-card: 0 1px 2px rgba(15,23,42,0.04), 0 12px 28px -12px rgba(15,23,42,0.10);
+    --shadow-card-dark: 0 1px 2px rgba(0,0,0,0.2), 0 12px 28px -12px rgba(0,0,0,0.45);
+    --shadow-pop: 0 10px 15px -3px rgba(15,23,42,0.08), 0 4px 6px -4px rgba(15,23,42,0.08);
+  }
+
+  body { background: radial-gradient(1200px 480px at 50% -120px, var(--accent-50) 0%, rgba(248,250,252,0) 60%), #f8fafc; }
+  html.dark body { background: radial-gradient(1200px 480px at 50% -160px, var(--accent-soft-dark) 0%, rgba(15,23,42,0) 55%), #0f172a; }
+
+  /* Reusable surfaces */
+  .card { background: #ffffff; border-radius: 1.75rem; box-shadow: var(--shadow-card); border: 1px solid rgba(15,23,42,0.05); transition: box-shadow .2s ease, transform .2s ease; }
+  html.dark .card { background: #1e293b; border-color: rgba(255,255,255,0.06); box-shadow: var(--shadow-card-dark); }
+  .card-flat { background: rgba(15,23,42,0.03); border-radius: 1.25rem; }
+  html.dark .card-flat { background: rgba(255,255,255,0.04); }
+  .card-interactive:hover { transform: translateY(-2px); box-shadow: var(--shadow-pop); }
+
+  .icon-badge { width: 2.75rem; height: 2.75rem; border-radius: 1rem; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+  .tap { transition: transform .12s ease, opacity .12s ease; }
+  .tap:active { transform: scale(0.96); }
+
+  .input-field { border-radius: 1rem; border: 1px solid rgb(226 232 240); background: #fff; transition: border-color .15s ease, box-shadow .15s ease; }
+  .input-field:focus { outline: none; border-color: var(--accent-600); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-600) 18%, transparent); }
+  html.dark .input-field { border-color: rgb(51 65 85); background: rgb(15 23 42); color: #fff; }
+
+  .segmented-btn { transition: all .18s ease; }
+</style>
+</head>
+<body class="text-slate-800 dark:text-slate-100">
+  <div id="app"></div>
+  <div id="toast-host"></div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
